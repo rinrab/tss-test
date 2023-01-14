@@ -45,6 +45,23 @@ function windInit() {
     } else {
         loadWind();
     }
+    document.getElementById("copy-btn").addEventListener("click", function () {
+        const w = game.windscenario;
+        wind.push({
+            wind: w.wind,
+            name: w.name + " copy",
+            stepscount: w.wind.length,
+            width: w.width,
+            height: w.height,
+            type: windTypes.userdefined,
+            startsize: w.startsize,
+        });
+
+        windscenario = wind.length - 1;
+        saveWind();
+        addWind();
+        windscenariocontrol.selectedIndex = windscenario;
+    });
     mapWidth = document.getElementById("map-width");
     mapHeight = document.getElementById("map-height");
     startLineSizeInput = document.getElementById("start-line-size");
@@ -79,7 +96,30 @@ function windInit() {
     });
 
     var editModal = document.getElementById("wind-editor-window");
-    editModal.addEventListener("hidden.bs.modal", function () {
+    editModal.addEventListener("hide.bs.modal", function (e) {
+        // var areEqual = true;
+        // var splitedWind = splitWind(windtext.value);
+        // if (splitedWind.length != game.windscenario.wind.length) {
+        //     areEqual = false;
+        // } else if (editIndex == -1) {
+        //     areEqual = false;
+        // } else if (nameinput.value != game.windscenario.name) {
+        //     areEqual = false;
+        // } else {
+        //     for (var i in splitedWind) {
+        //         var parsedWind = parseInt(splitedWind[i]);
+
+        //         if (parsedWind != game.windscenario.wind[i]) {
+        //             areEqual = false;
+        //         }
+        //     }
+        // }
+        // if (!areEqual) {
+        //     if (!confirm("Do you want to close. All changes will reset")) {
+        //         e.preventDefault();
+        //     }
+        // }
+
         removeEventListener("resize", updatePreview);
     })
 }
@@ -123,18 +163,26 @@ function updatePreview() {
     var size = Math.round((parseInt(mapHeight.value) - 4) / Math.sin(Math.PI / 4));
     var windtmp = splitWind(windtext.value);
 
+    var averageWind = 0;
+
     for (var i = 0; i < size; i++) {
         var parsedValue = parseInt(windtmp[i % windtmp.length]);
         if (!isNaN(parsedValue)) {
             parsedWind.push(parsedValue);
+            averageWind += parsedValue;
         } else {
             parsedWind.push(0);
         }
     }
 
+    console.log(averageWind)
+    averageWind = averageWind / size;
+
     var size = Math.round((parseInt(mapHeight.value) - 4) / Math.sin(Math.PI / 4));
 
     document.getElementById("wind-count").innerText = `${windtmp.length} / ${size}`;
+
+    document.getElementById("wind-average").innerText = `${averageWind.toFixed(1)}`;
 
     var editorPreview = document.getElementById("editor-preview");
     editorPreview.innerHTML = "";
@@ -145,10 +193,12 @@ function deleteClick() {
     if (editIndex != -1) {
         wind.splice(windscenario, 1);
 
-        windscenariocontrol.selectedIndex = 0;
+        var scenario = windscenario - 1;
         saveWind();
         windChange();
         addWind();
+        windscenariocontrol.selectedIndex = scenario;
+        windscenario = scenario;
     }
 }
 
@@ -244,17 +294,25 @@ function editorSetReadonlyState(rs) {
 function windEditorStart(iscreate) {
     addEventListener("resize", updatePreview);
 
+    var copyBtn = document.getElementById("copy-btn");
+
     shareBtn.hidden = true;
     if (iscreate) {
         editIndex = -1
         editorSetReadonlyState(false);
+        copyBtn.hidden = true;
     } else {
         editIndex = windscenario;
         if (wind[windscenariocontrol.selectedIndex].type == windTypes.userdefined) {
             editorSetReadonlyState(false);
             shareBtn.hidden = false;
+            copyBtn.hidden = false;
         } else {
             editorSetReadonlyState(true);
+            copyBtn.hidden = false;
+        }
+        if (wind[windscenariocontrol.selectedIndex].israndom) {
+            copyBtn.hidden = true;
         }
     }
 

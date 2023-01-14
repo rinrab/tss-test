@@ -8,6 +8,10 @@ var windscenario;
 var windscenariocontrol;
 var windtype = 0;
 
+function confirmation(state) {
+    localStorage.setItem(localStorageNames.confirmation, state);
+}
+
 const startLineSize = 15;
 
 var boatsvg =
@@ -278,7 +282,7 @@ function getWindSvg(wind, turncount, width = 200, height = 500, uiScale = 1) {
 
     var newRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     newRect.setAttribute("x", moveLeft - 5)
-    newRect.setAttribute("y", ((wind.length * step) + (fontSize * 2)) - (game.turncount + 3) * step);
+    newRect.setAttribute("y", ((wind.length * step) + (fontSize * 2)) - (turncount + 3) * step);
     newRect.setAttribute("height", step);
     newRect.setAttribute("width", width - moveLeft - 10 + 10);
     newRect.setAttribute("fill", "#fd7e14");
@@ -342,13 +346,32 @@ function renderGridSize() {
 
     var w = gamecont.clientWidth;
     var h = gamecont.clientHeight;
+
+    var scale;
+    var left = 0;
+
     if (h / game.height < w / game.width) {
-        gamearea.style.scale = h / (game.height * gridsize);
+        scale = h / (game.height * gridsize);
         gamearea.style.top = formatCssPx(0);
     } else {
-        gamearea.style.scale = w / (game.width * gridsize);
+        scale = w / (game.width * gridsize);
         gamearea.style.top = formatCssPx((h - game.height * gamearea.style.scale * gridsize) / 2);
     }
+
+    if (zoomType == zoomTypes.upMark) {
+        scale *= 3;
+
+        left = -game.width * scale * gridsize / 2 + gamecont.clientWidth / 2;
+
+        gamearea.style.top = formatCssPx(0);
+
+        gamearea.style.setProperty("--boat-scale", 0.7);
+    } else {
+        gamearea.style.setProperty("--boat-scale", 1.2);
+    }
+
+    gamearea.style.left = formatCssPx(left);
+    gamearea.style.scale = scale;
     gamearea.style.height = formatCssPx(game.height * gridsize);
     gamearea.style.width = formatCssPx(game.width * gridsize);
 }
@@ -429,16 +452,23 @@ function getNewBoat(player) {
 
 addEventListener("load", init);
 
+const zoomTypes = {
+    race: 0,
+    upMark: 1,
+}
+
+let zoomType = zoomTypes.race;
+
 function init() {
     windscenario = readIntSetting(localStorageNames.selectedWind, 0);
     windscenariocontrol = document.getElementById("select-wind");
     var gamearea = document.getElementById("game-area");
-    upMarkLanelines = document.createElement("img");
-    upMarkLanelines.src = "img/marklaneline.svg";
-    upMarkLanelines.className = "pn-lines game-elem";
-    gamearea.insertBefore(upMarkLanelines, document.getElementById("marks"));
+
+    upMarkLanelines = document.getElementById("upmarklines");
+
     document.getElementById("btn-nowember").addEventListener("click", function () {
         game.turncount = 0;
+        addRaceToCup();
         for (var i = 0; i < game.players.length; i++) {
             var player = game.players[i];
             player.tack = false;
@@ -457,6 +487,8 @@ function init() {
         game.isStart = true;
         game.placeBoatsOnStart();
         drawAll();
+        updateRaceCount();
+        saveAllCups();
     });
     windInit();
     settingsInit();
@@ -466,7 +498,12 @@ function init() {
     createContolls();
     drawAll();
     console.log("load");
-    document.getElementById("show-future-wind").addEventListener("click", windDataInit);
+    document.getElementById("show-future-wind").addEventListener("click", function () {
+        renderGridSize();
+        drawAll();
+        windDataInit();
+    });
+
     document.getElementById("edit-btn").addEventListener("click", function () {
         windEditorStart(false);
     });
@@ -480,18 +517,60 @@ function init() {
         drawAll()
     });
 
-    addEventListener("orientationchange", function() {
+    addEventListener("orientationchange", function () {
         renderGridSize();
         drawAll();
     })
+
+    const zoomCheck = document.getElementById("zoom-check");
+    zoomCheck.checked = false;
+    zoomCheck.addEventListener("change", function () {
+        zoomType = (zoomCheck.checked) ? zoomTypes.upMark : zoomTypes.race;
+        renderGridSize();
+        drawAll();
+    });
+
+    cupInit();
 
     var track = document.getElementById("track");
     track.setAttribute("viewBox", formatSvgViewBox(0, 0, game.width, game.height));
 
     var helpModal = new bootstrap.Modal(document.getElementById('help-modal'));
 
-    const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+    const keysDigits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
     addEventListener("keydown", function (e) {
+        if (e.target.tagName == "INPUT" && e.target.type != "radio") {
+            return;
+        }
+        if (e.code == "KeyA") {
+            if (game.isStart) {
+                addPlayer();
+                drawAll();
+            }
+        }
+        if (!game.isStart) {
+            if (e.code == "Digit1" && e.ctrlKey) {
+                for (let p of game.players) {
+                    if (!p.finished) {
+                        p.forwardBtn.checked = true;
+                    }
+                }
+            }
+            if (e.code == "Digit2" && e.ctrlKey) {
+                for (let p of game.players) {
+                    if (!p.finished) {
+                        p.tackBtn.checked = true;
+                    }
+                }
+            }
+            if (e.code == "Digit3" && e.ctrlKey) {2
+                for (let p of game.players) {
+                    if (!p.finished) {
+                        p.toMarkBtn.checked = true;
+                    }
+                }
+            }
+        }
         if (e.code == "Backspace") {
             if (!game.isStart) {
                 e.preventDefault();
@@ -507,10 +586,10 @@ function init() {
             helpModal.hide();
             helpModal.show();
         } else {
-            if (!game.isStart) {
-                var index = keys.findIndex(function (a) { return a == e.key });
+            if (!game.isStart && !e.ctrlKey) {
+                var index = keysDigits.findIndex(function (a) { return a == e.key });
                 var player = game.players[index];
-
+            
                 if (player != undefined) {
                     e.preventDefault();
                     if (player.tackBtn.checked) {
@@ -522,6 +601,13 @@ function init() {
             }
         }
     });
+
+    addEventListener("beforeunload", function (e) {
+        if (localStorage.getItem(localStorageNames.confirmation) == true ||
+            localStorage.getItem(localStorageNames.confirmation) == undefined) {
+            e.preventDefault();
+        }
+    })
 
     var fullscreenToggle = document.getElementById("full-screen");
     fullscreenToggle.addEventListener("click", function () {
@@ -645,6 +731,335 @@ function isFullscreenMode() {
 
 function isFullscreenSupported() {
     return (document.fullscreenEnabled || document.webkitFullscreenEnabled);
+}
+
+function updateRaceCount() {
+    var raceCount = document.getElementById("cup-race-count");
+
+    if (cup.races.length == 0) {
+        raceCount.hidden = true;
+    } else {
+        raceCount.innerText = cup.races.length;
+        raceCount.hidden = false;
+    }
+}
+
+function getPrototypeCup() {
+    return {
+        races: [],
+        name: "name",
+        excludingCount: 0
+    };
+}
+
+function cupInit() {
+    try {
+        cup = loadCup("cup");
+    } catch { }
+
+    const cupModal = document.getElementById("cup-modal");
+    const resetBtn = document.getElementById("cup-reset-btn");
+
+    const printBtn = document.getElementById("cup-print");
+    printBtn.addEventListener("click", function () {
+        window.print();
+    })
+
+    cupModal.addEventListener("show.bs.modal", function () {
+        updateCup();
+    });
+
+    resetBtn.addEventListener("click", function () {
+        cup = getPrototypeCup();
+        updateCup();
+        saveAllCups();
+    });
+
+    const excludingSelect = document.getElementById("cup-excluding");
+    excludingSelect.selectedIndex = cup.excludingCount;
+    excludingSelect.addEventListener("change", function () {
+        cup.excludingCount = parseInt(excludingSelect.value);
+        updateCup();
+        saveAllCups();
+    });
+
+    updateRaceCount();
+}
+
+function updateCup() {
+    const cupContainer = document.getElementById("cup-container");
+
+    cupContainer.innerHTML = "";
+    cupContainer.appendChild(getCupHtml(sortCup(cup)));
+
+    updateRaceCount();
+}
+
+function getPlayers(cup) {
+    let rv = [];
+
+    for (let race of cup.races) {
+        for (let key of Object.keys(race)) {
+            if (!rv.includes(key)) {
+                rv.push(key)
+            }
+        }
+    }
+
+    for (let i = 0; i < game.players.length; i++) {
+        if (!rv.includes(game.getPlayerName(i))) {
+            rv.push(game.getPlayerName(i))
+        };
+    }
+
+    return rv;
+}
+
+let cup = getPrototypeCup();
+
+function loadCup(name) {
+    let parsedData;
+
+    try {
+        parsedData = JSON.parse(localStorage.getItem(name));
+    } catch {
+        throw "Parse error";
+    }
+    if (!parsedData) {
+        throw "Parse error";
+    }
+
+    let races = [];
+
+    for (let race of parsedData.races) {
+        let newRace = {};
+
+        for (let key of Object.keys(race)) {
+            if (race[key]) {
+                newRace[key] = race[key];
+            } else {
+                throw "Parse error";
+            }
+        }
+
+        races.push(newRace);
+    }
+    let newName;
+    let newExcludingCount; 
+
+    if (parsedData.name) {
+        newName = parsedData.name;
+    } else {
+        throw "Parse error";
+    }
+    if (parsedData.excount == undefined) {
+        throw "Parse error";
+    } else {
+        newExcludingCount = parsedData.excount;
+    }
+
+    return {
+        races: races,
+        name: newName,
+        excludingCount: newExcludingCount
+    };
+}
+
+function saveCup(cup, name) {
+    let races = [];
+
+    for (let race of cup.races) {
+        let newRace = {};
+
+        for (let key of Object.keys(race)) {
+            newRace[key] = race[key];
+        }
+
+        races.push(newRace);
+    }
+
+    localStorage.setItem(name, JSON.stringify({
+        races: races,
+        name: name,
+        excount: cup.excludingCount
+    }));
+}
+
+function saveAllCups() {
+    saveCup(cup, "cup");
+}
+
+const dsqTime = 10000000; // 10 milions
+
+function addRaceToCup() {
+    let newRaceArr = [];
+    let newRace = {};
+
+    for (let i = 0; i < game.players.length; i++) {
+        const player = game.players[i];
+        let newPlayer = { index: i };
+
+        if (player.finished == false) {
+            // TODO: DNC
+            newPlayer.time = dsqTime;
+        } else {
+            newPlayer.time = player.finished;
+        }
+
+        let name = player.name;
+
+        while (newRaceArr.includes(name)) {
+            name += "A";
+        }
+
+        newPlayer.name = name;
+
+        newRaceArr.push(newPlayer);
+    }
+
+    newRaceArr.sort(function (a, b) {
+        return a.time - b.time;
+    });
+
+    console.log(newRaceArr);
+    for (let i = 0; i < newRaceArr.length; i++) {
+        const p = newRaceArr[i];
+
+        if (p.time == dsqTime) {
+            newRace[p.name] = -1;
+        } else {
+            newRace[p.name] = i + 1;
+        }
+    }
+
+    cup.races.push(newRace);
+}
+
+function sortCup(cup) {
+    let players = getPlayers(cup);
+
+    let races = [];
+    let sum = {};
+
+    for (let race of cup.races) {
+        let newRace = [];
+
+        for (let key of players) {
+            if (race[key] == -1) {
+                newRace[key] = `DNF ${players.length + 1}`;
+            } else if (race[key]) {
+                newRace[key] = race[key];
+            } else {
+                newRace[key] = `DNC ${players.length + 1}`;
+            }
+        }
+
+        races.push(newRace);
+    }
+
+    let newPlayers = [];
+
+    for (let key of players) {
+        let newSumNet = 0;
+        let newSumTotal = 0;
+        let newPos = [];
+        let exPos = [];
+
+        for (let race of cup.races) {
+            if (race[key] == -1) {
+                newSumNet += players.length + 1;
+                exPos.push(players.length + 1);
+            } else if (race[key]) {
+                exPos.push(race[key]);
+                newSumNet += race[key];
+            } else {
+                newSumNet += players.length + 1;
+                exPos.push(players.length + 1);
+            }
+        }
+        exPos.sort(function (a, b) {
+            return a - b;
+        });
+        console.log(exPos);
+
+        for (let i = 0; i < exPos.length - cup.excludingCount; i++) {
+            newSumTotal += exPos[i];
+        }
+
+        for (let race of races) {
+            newPos.push(race[key]);
+        }
+
+        newPlayers.push({ pos: newPos, netPoints: newSumNet, totalPoints: newSumTotal, name: key });
+
+        sum[key] = newSumNet;
+    }
+
+    newPlayers.sort(function (a, b) {
+        return a.totalPoints - b.totalPoints;
+    });
+
+    return rv = {
+        races: races,
+        name: cup.name,
+        sum: sum,
+        players: newPlayers
+    }
+}
+
+function getCupHtml(cup) {
+    let rv = document.createElement("table");
+    let tbody = document.createElement("tbody");
+    rv.appendChild(tbody);
+
+    let rows = [];
+
+    let players = getPlayers(cup);
+
+    // Rows init
+    for (let i = 0; i < players.length + 1; i++) {
+        let newRow = document.createElement("tr");
+        newRow.className = "align-middle";
+
+        rows.push(newRow);
+        tbody.appendChild(newRow);
+    }
+    console.log(cup);
+
+    // First col
+    addColToRow(rows[0], "Name", "th");
+    
+    for (let i = 0; i < cup.races.length; i++) {
+        addColToRow(rows[0], "Race " + (i + 1), "th");
+    }
+    addColToRow(rows[0], "Net points", "th");
+    addColToRow(rows[0], "Total points", "th");
+    addColToRow(rows[0], "Rank", "th");
+    
+    for (let i = 0; i < cup.players.length; i++) {
+        const player = cup.players[i];
+
+        addColToRow(rows[i + 1], player.name);
+
+        for (let pos of player.pos) {
+            addColToRow(rows[i + 1], pos)
+        }
+        addColToRow(rows[i + 1], player.netPoints);
+        addColToRow(rows[i + 1], player.totalPoints);
+        addColToRow(rows[i + 1], i + 1);
+    }
+
+    rv.className = "table table-hover table-bordered text-center";
+    rv.style = "table-layout: fixed";
+
+    return rv;
+}
+
+function addColToRow(row, text, colType = "td", className = "") {
+    newItem = document.createElement(colType);
+    newItem.innerText = text;
+    newItem.className = className;
+    row.appendChild(newItem);
 }
 
 function random(max) {
